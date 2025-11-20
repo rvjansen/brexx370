@@ -1,8 +1,9 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.13)
 project(brexx C)
 
 SET(CMAKE_C_STANDARD 90)
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CROSS__")
+#SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fPIC -std=c89 -stdlib=libc++ -Wall")
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcommon")
 SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -D__DEBUG__")
 
@@ -13,6 +14,7 @@ include_directories(fss)
 include_directories(mvs)
 include_directories(dynit)
 include_directories(rac)
+include_directories(regex)
 include_directories(smf)
 include_directories(metal)
 include_directories(cross)
@@ -42,8 +44,10 @@ add_executable(brexx
         inc/rxmvsext.h
         inc/rxnje.h
         inc/rxrac.h
+        inc/rxregex.h
         inc/rxtcp.h
         inc/rxvsamio.h
+        inc/sarray.h
         inc/stack.h
         inc/trace.h
         inc/util.h
@@ -155,6 +159,7 @@ add_executable(brexx
         src/rxnje.c
         src/rxstr.c
         src/rxrac.c
+        src/rxregex.c
         src/rxtcp.c
         src/rxtso.c
         src/rxvsamio.c
@@ -181,7 +186,9 @@ add_executable(brexx
         map/list.h
         map/list.c
         smf/smf.h
-        smf/smf.c )
+        smf/smf.c
+        regex/re.h
+        regex/re.c )
 
 add_library(irxexcom
         irx/irxexcom.c src/bintree.c metal/metal.c metal/metal.h printf/printf.c printf/printf.h)

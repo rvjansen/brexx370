@@ -63,8 +63,8 @@ typedef  struct trx_env_ctx
     int           proc_id;
     void         *cppl;
     void         *lastLeaf;
-
-    unsigned      dummy[27];
+    int           runId;      // TODO: add to asm csect
+    unsigned      dummy[23];
 
     unsigned     *VSAMSUBT;
     unsigned      reserved[64];
@@ -79,14 +79,28 @@ typedef struct trx_outtrap_ctx {
     unsigned int skipAmt;
 } RX_OUTTRAP_CTX, *RX_OUTTRAP_CTX_PTR;
 
+typedef struct trx_arraygen_ctx {
+    Lstr varName;
+    Lstr ddName;
+} RX_ARRAYGEN_CTX, *RX_ARRAYGEN_CTX_PTR;
+
 /* ---------------------------------------------------------- */
-/* assembler module RXINIT                                  */
+/* assembler module RXINIT                                   */
 /* ---------------------------------------------------------- */
 typedef struct trx_init_params
 {
     unsigned   *rxctxadr;
     unsigned   *wkadr;
 } RX_INIT_PARAMS, *RX_INIT_PARAMS_PTR;
+
+/* ---------------------------------------------------------- */
+/* assembler module RXTERM                                    */
+/* ---------------------------------------------------------- */
+typedef struct trx_term_params
+{
+    unsigned   *rxctxadr;
+    unsigned   *wkadr;
+} RX_TERM_PARAMS, *RX_TERM_PARAMS_PTR;
 
 /* ---------------------------------------------------------- */
 /* assembler module RXIKJ441                                  */
@@ -205,15 +219,18 @@ int  findLoadModule(char moduleName[8]);
 int  loadLoadModule(char moduleName[8], void **pAddress);
 int  linkLoadModule(const char8 moduleName, void *pParmList, void *GPR0);
 int  privilege(int state);
+int  getRunId();
 
 #ifdef __CROSS__
 int  call_rxinit(RX_INIT_PARAMS_PTR params);
+int  call_rxterm(RX_TERM_PARAMS_PTR params);
 int  call_rxtso(RX_TSO_PARAMS_PTR params);
 void call_rxsvc(RX_SVC_PARAMS_PTR params);
 int  call_rxvsam(RX_VSAM_PARAMS_PTR params);
 unsigned int call_rxikj441 (RX_IKJCT441_PARAMS_PTR params);
 unsigned int call_rxabend (RX_ABEND_PARAMS_PTR params);
 int systemCP(void *uptPtr, void *ectPtr, char *cmdStr, int cmdLen, char *retBuf, int retBufLen);
+int cputime(void *workarea);
 
 #else
 extern int  call_rxinit(RX_INIT_PARAMS_PTR params);
@@ -223,6 +240,7 @@ extern int  call_rxvsam(RX_VSAM_PARAMS_PTR params);
 extern unsigned int call_rxikj441 (RX_IKJCT441_PARAMS_PTR params);
 extern unsigned int call_rxabend (RX_ABEND_PARAMS_PTR params);
 extern int systemCP(void *uptPtr, void *ectPtr, char *cmdStr, int cmdLen, char *retBuf, int retBufLen);
+extern int cputime(void *workarea);
 #endif
 
 /* ---------------------------------------------------------- */
@@ -319,6 +337,26 @@ typedef struct t_sdwa {
     } sdwaname;
     void      *sdwaepa;     /* -     ENTRY POINT ADDRESS OF ABENDING PROGRAM.   */
     void      *sdwaiobr;    /* -     POINTER TO SDWAFIOB FIELD,                 */
+    struct {
+        int _sdwapsw1;
+        int _sdwanxt1;
+    } sdwaec1;
+
+    union {
+        struct {
+            unsigned char  _filler3;  /* RESERVED                                */
+            unsigned char  _sdwailc1; /* INSTRUCTION LENGTH CODE FOR PSW DEFINED */
+            unsigned char  _filler4;  /* RESERVED FOR IMPRECISE INTERRUPTS */
+            unsigned char  _sdwaicd1; /* 8 BIT INTERRUPT CODE              */
+            void          *_sdwatran; /* VIRTUAL ADDRESS CAUSING TRANSLATION     */
+        } sdwaaec1;
+        struct {
+            unsigned char  _filler5[7];
+            unsigned char  _sdwadxc;     /* Data exception code when program interrupt */
+        } _sdwa_struct1;
+    } _sdwa_union1;
+
+    byte _rest[392];
 } SDWA;
 
 #define sdwacmpf  sdwafiob.sdwaabcc._sdwacmpf
@@ -350,6 +388,12 @@ typedef struct t_sdwa {
 #define sdwagr14  sdwagrsv._sdwagr14
 #define sdwagr15  sdwagrsv._sdwagr15
 #define sdwarbad  sdwaname._sdwarbad
+#define sdwapsw1  sdwaec1._sdwapsw1
+#define sdwanxt1  sdwaec1._sdwanxt1
+#define sdwailc1  _sdwa_union1.sdwaaec1._sdwailc1
+#define sdwaicd1  _sdwa_union1.sdwaaec1._sdwaicd1
+#define sdwatran  _sdwa_union1.sdwaaec1._sdwatran
+#define sdwadxc   _sdwa_union1._sdwa_struct1._sdwadxc
 
 /* Values for field "sdwacmpf" */
 #define sdwareq  0x80 /* - ON, SYSABEND/SYSMDUMP/SYSUDUMP DUMP TO BE        */

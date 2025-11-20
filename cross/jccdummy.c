@@ -13,12 +13,23 @@
 int _testauth (void) {
     return 0;
 }
+int _modeset (int p) {
+    return 0;
+}
 
 int _setjmp_stae (jmp_buf jbs, char * sdwa104) {
     return 0;
 }
 
+int _setjmp_estae (jmp_buf jbs, char * sdwa104) {
+    return 0;
+}
+
 int _setjmp_canc (void) {
+    return 0;
+}
+
+int _setjmp_ecanc (void) {
     return 0;
 }
 
@@ -31,6 +42,15 @@ int _write2op  (char * msg) {
 void Sleep (long value) {
     sleep(value/1000);
 }
+
+
+int _open (char * filename, int open_flags) {
+    return 0;
+}
+int __bldl (int handle) {
+    return 0;
+}
+
 
 char * strupr (char * string) {
     int i;
@@ -70,6 +90,17 @@ int call_rxinit(RX_INIT_PARAMS_PTR params)
     } else {
         rc = -43;
     }
+    return rc;
+}
+
+int call_rxterm(RX_TERM_PARAMS_PTR params)
+{
+    int rc = 0;
+
+#ifdef __DEBUG__
+    printf("DBG> DUMMY RXTERM ...\n");
+#endif
+
     return rc;
 }
 
@@ -166,6 +197,10 @@ int systemCP(void *uptPtr, void *ectPtr, char *cmdStr, int cmdLen, char *retBuf,
 
     printf("'%*s'\n", cmdLen, cmdStr);
 
+    return 0;
+}
+
+int cputime(void *workarea) {
     return 0;
 }
 

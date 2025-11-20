@@ -1,12 +1,25 @@
 #include <time.h>
 #include "lerror.h"
 #include "lstring.h"
+#include "rxmvsext.h"
 
 #ifdef __CROSS__
 #include "jccdummy.h"
 #endif
 
 static struct timeval tv_start;
+
+double
+MVScputime( )
+{
+    char time[16];
+    char *sTime = time;
+
+    bzero(time, 16);
+    cputime(&sTime);
+
+    return (double) strtol(time, &sTime, 10)/1000000;
+}
 
 int
 timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
@@ -59,8 +72,9 @@ Ltime( const PLstr timestr, char option )
  /*   extended time parms
   *     option = '1' = MS   time of day in milliseconds;
   *     option = '2' = US   time of day in microseconds ;
-  *     option = '4' = HS   time of day in hundreds of a seconds (integer value) ;
   *     option = '3  = CPU  cpu time
+  *     option = '4' = HS   time of day in hundreds of a seconds (integer value)
+  *     option = '5' = LS   time of day in micro seconds, in string format, 5 chars (digits) seconds, 6 chars micro seconds without delimiters
   */
 
     Lfx(timestr,30); LZEROSTR(*timestr);
@@ -134,7 +148,6 @@ Ltime( const PLstr timestr, char option )
             break;
         case '1':
             gettimeofday(&tv, &tz);
-            gettimeofday(&tv, &tz);
             sprintf((char *) LSTR(*timestr), "%d.%03ld",
                     (tmdata->tm_hour * 3600) +          // hh -> ss +
                     (tmdata->tm_min  * 60  ) +          // mm -> ss +
@@ -150,6 +163,9 @@ Ltime( const PLstr timestr, char option )
                     tv.tv_usec);                        // us
 
              break;
+        case '3':
+            sprintf((char *) LSTR(*timestr), "%.3f",MVScputime());
+            break;
         case '4':
             gettimeofday(&tv, &tz);
             sprintf((char *) LSTR(*timestr), "%d",
@@ -157,12 +173,17 @@ Ltime( const PLstr timestr, char option )
                     (tmdata->tm_min  * 6000  ) +          // mm -> ss +
                     (tmdata->tm_sec  * 100)    +         // ss
                     tv.tv_usec/10000);                   // us
-
             break;
+		case '5':
+			gettimeofday(&tv, &tz);
+			sprintf((char *) LSTR(*timestr), "%05d%06d",
+					(tmdata->tm_hour * 3600) +          // hh -> ss +
+					(tmdata->tm_min  * 60  ) +          // mm -> ss +
+					(tmdata->tm_sec),                   // ss
+					tv.tv_usec);                        // us
 
-        case '3':
-            sprintf((char *) LSTR(*timestr), "%.3f",(double) clock()/1000);
-            break;
+			break;
+
 		default:
 			Lerror(ERR_INCORRECT_CALL,0);
 	}

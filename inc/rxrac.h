@@ -5,17 +5,13 @@
 #define __unused
 #endif
 
-#define FACILITY    (unsigned char *) "FACILITY"
+#define FACILITY    (const char *) "FACILITY"
 
-#define AUTH_ALL    (unsigned char *) "BRXALLAUTH"
-#define PRIVILAGE   (unsigned char *) "BRXPRIVAUTH"
-#define CONSOLE     (unsigned char *) "BRXCONSAUTH"
-#define MTT         (unsigned char *) "BRXMTTAUTH"
-#define SMF         (unsigned char *) "BRXSMFAUTH"
-#define CP          (unsigned char *) "BRXCPAUTH"
+#define SVC244      (const char *) "SVC244"
+#define DIAG8       (const char *) "DIAG8CMD"
 
-#define READ        (unsigned char *) "READ"
-#define ALTER       (unsigned char *) "ALTER"
+#define READ        (const char *) "READ"
+#define ALTER       (const char *) "ALTER"
 
 void RxRacRegFunctions();
 

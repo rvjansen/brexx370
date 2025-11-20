@@ -45,13 +45,15 @@
 #include "rxtso.h"
 #include "fss.h"
 #include "ldefs.h"
+#include "rxmvsext.h"
 
 // Field Definition
 struct sFields
 {
     char *name;            // Field Name or Null String for TXT fields
     int   bufaddr;         // Field location - offset into 3270 buffer
-    int   attr;            // Attribute values
+    int   attr;            // converted Attribute values
+    int   orgattr;         // original Attribute values
     int   length;          // Field Length
     char *data;            // Field Data
 };
@@ -378,12 +380,19 @@ int fssInit(void)
     paramsPtr.attradr   = 0;
     paramsPtr.termidadr = 0;
 
+#ifndef __CROSS__
     gtterm(&paramsPtr);
+#endif
 
     fssPrimaryCols      = primaryScreenSize.bCols;
     fssPrimaryRows      = primaryScreenSize.bRows;
     fssAlternateCols    = alternateScreenSize.bCols;
     fssAlternateRows    = alternateScreenSize.bRows;
+
+#ifdef __CROSS__
+    fssAlternateRows = 62;
+    fssAlternateCols = 160;
+#endif
 
     fssBufferSize       = (fssAlternateRows * fssAlternateCols * 2);       // Max buffer length
 
@@ -476,6 +485,10 @@ int fssTerm(void)
     FREE(refresh_outBuf);
     FREE(refresh_inBuf);
     FREE(show_outBuf);
+
+    show_outBuf=0;
+    refresh_inBuf=0;
+    refresh_outBuf=0;
 
     stlineno(1);                        // Exit TSO Full Screen Mode
     stfsmode(0);
@@ -572,6 +585,7 @@ int fssTxt(int row, int col, int attr, char * text)
     //----------------------------
     fields[ix].name    =  0;             // no name for a text field
     fields[ix].bufaddr =  (int) position2offset(row,col,fssAlternateCols);
+    fields[ix].orgattr =  attr;
     fields[ix].attr    =  fssAttr(attr);
     fields[ix].length  =  txtlen;
     fields[ix].data    =  (char *) MALLOC(txtlen+1, "FSSTXT_data");
@@ -642,6 +656,7 @@ int fssFld(int row, int col, int attr, char * fldName, int len, char *text)
     fields[ix].name    =  (char *) MALLOC(strlen(fldName)+1, "FSSFLD_name");
     strcpy(fields[ix].name, fldName);
     fields[ix].bufaddr =  (int)position2offset(row,col,fssAlternateCols);
+    fields[ix].orgattr =  attr;
     fields[ix].attr    =  fssAttr(attr);
     fields[ix].length  =  len;
     fields[ix].data    =  (char *) MALLOC(len + 1, "FSSFLD_data");
@@ -731,6 +746,146 @@ char * fssGetField(char *fldName)
     return fields[ix].data;            // Return pointer to data
 }
 
+// just a helping macro to make code easier readable!
+//
+#define fssmetricM(mfield,mcount) {for(ix=0; ix < mcount; ix++) {\
+   memset(LSTR(fieldname), 0, 256); if (mfield[ix].name != NULL) Lscpy(&fieldname,mfield[ix].name); \
+   else Lscpy(&fieldname, "$$$TXT"); \
+   if (detail == 1) { strcat((char *) LSTR(fieldname), " "); \
+      sprintf(strnum, "%d", mfield[ix].bufaddr); \
+      strcat((char *) LSTR(fieldname), strnum); \
+      strcat((char *) LSTR(fieldname), " "); \
+      sprintf(strnum, "%d", mfield[ix].length); \
+      strcat((char *) LSTR(fieldname), strnum); \
+   } strcat((char *) LSTR(fieldname), ";"); \
+   LLEN(fieldname) = strlen(LSTR(fieldname)); Lstrcat(fssDefs, &fieldname); }                            \
+} //  End Macro
+
+// ----------------------------------------
+//  Return all defined Fields
+//    char *name;            // Field Name or Null String for TXT fields
+//    int   bufaddr;         // Field location - offset into 3270 buffer
+//    int   attr;            // Attribute values
+//    int   length;          // Field Length
+//    char *data;            // Field Data
+// ----------------------------------------
+void fssGetMetrics(PLstr fssDefs, char *fssDetails)  {
+    int ix,detail=0, field=0, j=0;
+
+    char strnum[8];
+    Lstr fieldname;
+
+    LINITSTR(fieldname);
+    Lfx(&fieldname,256);
+
+    if (strcmp(fssDetails, "DETAILS") == 0 ) detail=1;
+    if (strcmp(fssDetails, "FIELDS") == 0 )  field=1;
+
+    // Loop through fields and pick up fields and its attributes
+    if (field==0) {
+        fssmetricM(fssFields, fssFieldCnt)
+        fssmetricM(fssStaticFields, fssStaticFieldCnt)
+    }
+    else for (ix = 0; ix < fssFieldCnt; ix++) {
+        //  'FIELD  #ROW #COL attr _field vlen ' _preset'
+        //  'TEXT   #ROW #COL attr' _txt'
+        //    *row = (offset / max_col) + 1;
+        //    *col = (offset % max_col) + 1;
+        memset(LSTR(fieldname), 0,256);
+        if (fssFields[ix].name != NULL) field=1;
+        else field=0;
+        if (field==1)  {
+            Lscpy(&fieldname, ";1;");
+            strcat((char *) LSTR(fieldname),"\"FIELD ");
+        }
+        else {   // text field
+            Lscpy(&fieldname, "__#f='");
+            strcat((char *) LSTR(fieldname), fssFields[ix].data);
+            strcat((char *) LSTR(fieldname), "';1;");
+            strcat((char *) LSTR(fieldname),"\"TEXT  ");
+        }
+        sprintf(strnum, "%4d", (fssFields[ix].bufaddr/fssAlternateCols)+1);  // Row
+        strcat((char *) LSTR(fieldname),strnum);
+        sprintf(strnum, "%4d", (fssFields[ix].bufaddr%fssAlternateCols)+1);  // Column
+        strcat((char *) LSTR(fieldname),strnum);
+        strcat((char *) LSTR(fieldname), " ");
+        sprintf(strnum, "%d", fssFields[ix].orgattr);     // attribute
+        strcat((char *) LSTR(fieldname), strnum);
+        strcat((char *) LSTR(fieldname), " ");
+        if (field==1) {
+            strcat((char *) LSTR(fieldname),fssFields[ix].name);
+            strcat((char *) LSTR(fieldname), " ");
+            sprintf(strnum, "%d", fssFields[ix].length);
+            strcat((char *) LSTR(fieldname), strnum);
+            strcat((char *) LSTR(fieldname)," __#g\"");
+        }
+        else strcat((char *) LSTR(fieldname)," __#f\"");
+        strcat((char *) LSTR(fieldname), ";2;");
+        LLEN(fieldname) = strlen(LSTR(fieldname));
+        Lstrcat(fssDefs, &fieldname);
+    }
+/*
+    for(ix = 0; ix < fssFieldCnt; ix++)  {
+        memset(LSTR(fieldname),0,64);
+         if (fssFields[ix].name != NULL) {printf("has Name\n"); Lscpy(&fieldname,fssFields[ix].name);}
+         else Lscpy(&fieldname, "$$$TXT");
+
+        if (detail==1) {
+            strcat((char *) LSTR(fieldname), " ");
+            sprintf(strnum, "%d", fssFields[ix].bufaddr);
+            strcat((char *) LSTR(fieldname), strnum);
+            strcat((char *) LSTR(fieldname), " ");
+            sprintf(strnum, "%d", fssFields[ix].length);
+            strcat((char *) LSTR(fieldname), strnum);
+        }
+        strcat((char *) LSTR(fieldname),";");
+        LLEN(fieldname)=strlen(LSTR(fieldname));
+        Lstrcat(fssDefs, &fieldname) ;  // concatenate all fields
+    }
+    for(ix=0; ix < fssStaticFieldCnt; ix++) {
+        memset(LSTR(fieldname), 0, 64);
+        Lscpy(&fieldname, fssStaticFields[ix].name);
+        if (detail == 1) {
+            strcat((char *) LSTR(fieldname), " ");
+            sprintf(strnum, "%d", fssStaticFields[ix].bufaddr);
+            strcat((char *) LSTR(fieldname), strnum);
+            strcat((char *) LSTR(fieldname), " ");
+            sprintf(strnum, "%d", fssStaticFields[ix].length);
+            strcat((char *) LSTR(fieldname), strnum);
+        }
+        strcat((char *) LSTR(fieldname), ";");
+        LLEN(fieldname) = strlen(LSTR(fieldname));
+        Lstrcat(fssDefs, &fieldname);  // concatenate all fields
+    }
+*/
+    LFREESTR(fieldname);
+}
+
+//----------------------------------------
+//  Return all defined Fields
+//   rc=4  position is already occupied by a field
+//   rc=0  position is available
+//----------------------------------------
+int fssCheckPos(int screenPos)
+{
+    int ix;
+    setVariable("_fssField","");
+ // Loop through fields and pick up fields and its attributes
+    for(ix = 0; ix < fssFieldCnt; ix++)  {
+        if (fssFields[ix].bufaddr==screenPos) {
+            setVariable("_fssField",fssFields[ix].name);
+            return 4;
+        }
+     }
+    for(ix=0; ix < fssStaticFieldCnt; ix++) {
+        if (fssStaticFields[ix].bufaddr==screenPos) {
+            setVariable("_fssField",fssFields[ix].name);
+            return 4;
+        }
+    }
+    return 0;
+}
+
 //----------------------------------------
 //  Set Cursor position for next write
 //
@@ -765,6 +920,14 @@ int fssSetCursor(char *fldName)
 
     return 0;
 }
+int fssGetCurPos() {
+    return fssCSR;
+}
+int fssSetCurPos(int cursor) {
+    fssCSRPOS=0;
+    fssCSR=cursor;
+}
+
 
 //----------------------------------------
 // Replace Field Attribute Value
@@ -794,6 +957,7 @@ int fssSetAttr(char *fldName, int attr)
     ix--;
 
     // Replace Basic 3270 Attribute data
+    fields[ix].orgattr =  attr;
     fields[ix].attr = fssAttr(attr);
 
     return 0;
@@ -828,9 +992,9 @@ int fssSetColor(char *fldName, int color)
 
     ix--;
 
-    // Update Color Attribute Value
-    attr = (fields[ix].attr & 0xFF00FF) | (color & 0xFF00);
-    fields[ix].attr = attr;
+    // Update attributes
+    fields[ix].orgattr =  color;
+    fields[ix].attr    =  fssAttr(color);
 
     return 0;
 }
@@ -864,6 +1028,7 @@ int fssSetXH(char *fldName, int xha)
     ix--;
 
     // Update Extended Formatting Attribute
+   // fields[ix].orgattr= fields[ix].orgattr | ??? ;
     attr = (fields[ix].attr & 0xFFFF) | (xha & 0xFF0000);
     fields[ix].attr = attr;
 
@@ -943,6 +1108,7 @@ int fssRefresh(int expires, int cls)
     int   inLen;
     int   xHilight;
     int   xColor;
+    int   wait=500;
 
     char *p;
 
@@ -1015,7 +1181,6 @@ int fssRefresh(int expires, int cls)
     {
         fssCSRPOS = offset2address(fssCSR, fssAlternateRows, fssAlternateCols);        // if no cursor position was specified,
     }                                       // use last known position
-
     if (fssCSRPOS)                          // if cursor position was specified
     {
         *p++ = 0x11;                        // SBA
@@ -1032,22 +1197,34 @@ int fssRefresh(int expires, int cls)
         if (expires==0) {
             inLen = tget_asis(refresh_inBuf, fssBufferSize);           // TGET-ASIS
         } else {
-            ix = expires / 150;
+            if (expires<500) wait=10;
+            ix = expires / wait;
             if (ix<1) ix=1;
 
             for (i = 0; i < ix; i++){
+                refresh_inBuf[0]=0x00;
                 inLen = tget_nowait(refresh_inBuf, fssBufferSize);    // TGET-NOWAIT
-                if (inLen==-1) Sleep(150);        // rc> 0 key was entered, rc=-1 timeout
+                if (inLen==-1) Sleep(wait);        // rc> 0 key was entered, rc=-1 timeout
                 else break;
             }
             if (inLen==-1) {
                 fssAID = 4711;
-                goto timeout;
+                Sleep(100);
+                inLen = tget_nowait(refresh_inBuf, fssBufferSize);    // TGET-NOWAIT
+                if (inLen==-1) goto timeout; // really a timeout, or was there concurrent other action?
+       /*
+                else {
+                    char wtostr[64];
+                    sprintf(wtostr,"Timeout/Key Conflict, AID %x %d %d \n",refresh_inBuf[0],refresh_inBuf[0],inLen);
+                    _write2op(wtostr);
+                    break;
+                }
+        */
             }
         }
-        if(*refresh_inBuf != 0x6E )                 // Check for reshow
-            break;                            //   no - break out
-    } while(1);                             // Display Screen until no reshow
+        if(*refresh_inBuf != 0x6E )   break;  // Check for reshow, if no - break out, else continue
+
+    } while(1);                               // Display Screen until no reshow
 
 
     doInput(refresh_inBuf, inLen);                  // Process Input Data Stream
@@ -1071,7 +1248,6 @@ int fssShow(int cls)
     int   xColor;
 
     char *p;
-
     p = show_outBuf;                             // current position in 3270 data stream
 
     //*p++ = 0x27;                            // Escape

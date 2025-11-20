@@ -1,13 +1,24 @@
 #include <string.h>
 #include "bmem.h"
 #include "lstring.h"
+#include "lerror.h"
 #include "stack.h"
 #include "rxmvsext.h"
 #include "hostenv.h"
+#include "util.h"
+
+#ifdef __CROSS__
+# include "jccdummy.h"
+#else
+extern Lstr	errmsg;
+extern char* _style;
+#endif
 
 #define STEM 1
 #define FIFO 2
 #define LIFO 3
+
+extern RX_ENVIRONMENT_CTX_PTR environment;
 
 void rxqueue(char *s, int mode);
 void remlf(char *s);
@@ -20,6 +31,11 @@ void remlf(char *s);
 {if (filter > 0) { \
    if (filter == 1 && strstr((char *) record,drop) != NULL) continue;  \
    if (filter == 2 && strstr((char *) record,keep) == NULL) continue;}  \
+}
+#define dsopen(filename,mode) \
+  {Lword(filename,incmd,4);   \
+   ftoken=__open_file( filename,mode); \
+   if (ftoken == NULL) goto openerror; \
 }
 
 void
@@ -55,15 +71,64 @@ getStem0(char *sName)  {
     return getIntegerVariable(vname);
 }
 
-int RxEXECIO(char **tokens) {
+/* -------------------------* open_file *------------------------- */
+FILE* __open_file( const PLstr fn, const char *mode)
+{
+    int	  i;
+    Lstr  str;
+    FILE *fp=NULL;
+    QuotationType quotationType;
+    char* _style_old = _style;   // save fopen style
+
+    quotationType = CheckQuotation((char *)fn->pstr);
+
+    switch (quotationType) {
+     // supplied ddname or dsn is unquoted, could be both ddn or dsn
+        case UNQUOTED:
+            _style = "//DDN:";    // 1. try to open as DDN
+            if (LLEN(*fn)>0 && LLEN(*fn)<=8) if ((fp=FOPEN((char*)LSTR(*fn),mode))!=NULL) break;  // DDN open goto isopen;
+         // else
+            _style = "//DSN:";    // 2. try to open as userid.DSN
+            LINITSTR(str)
+            if (environment->SYSPREF[0] != '\0') {
+                Lcat(&str, environment->SYSPREF);
+                Lcat(&str, ".");
+                Lcat(&str, (char *) fn->pstr);
+                LASCIIZ(str)
+            }  else Lstrcpy(&str,fn);
+            fp=FOPEN((char*)LSTR(str),mode);
+            break;     // fp contains either file handle or NULL, return it
+     // supplied name is quoted, must be a dsn
+        case FULL_QUOTED:
+            LINITSTR(str)
+            Lfx(&str,LLEN(*fn)-2);
+            memcpy(str.pstr, (fn->pstr) + 1, fn->len - 2);
+            str.len = fn->len - 2;
+            LASCIIZ(str)
+            _style = "//DSN:";
+            fp=FOPEN((char*)LSTR(str),mode);
+            break;     // fp contains either file handle or NULL, return it
+     // unknown or incomplete name
+        default:
+            Lerror(ERR_DATA_NOT_SPEC, 0);
+    }
+// file is open or not open, cleanup and return file handle or NULL
+// LFREESTR(str);                // release str, is nonsense for LSTR definitions
+   _style = _style_old;           // restore initial fopen style
+return fp;
+} /* open_file */
+
+
+int RxEXECIO(char **tokens,PLstr incmd) {
     int ip1,ii;
     int filter=0, tokenhi = 0;
     int recs = 0, rrecs=0, wrecs=0, maxrecs=0;
     int skip=0, subfrom=0,sublen=0, startAT=0;
     int mode=FIFO;
+    int findx=0;
 
     FILE *ftoken=NULL;
-    PLstr plsValue;
+    PLstr plsValue,filename;
 
     char pbuff[4098], obuff[4098];
     char vname1[32];
@@ -73,6 +138,7 @@ int RxEXECIO(char **tokens) {
  * --------------------------------------------------------------------------------------------
  */
     LPMALLOC(plsValue)
+    LPMALLOC(filename)
     while (tokens[tokenhi] != NULL) tokenhi++;     // find number of tokens
     tokenhi--;
 
@@ -140,10 +206,8 @@ DISKR:
       else if (findToken("LIFO", tokens) >= 0) mode = LIFO;
 // open file
     if (tokenhi<3) goto incomplete;
-    ftoken = fopen(tokens[3], "r");
-    if (ftoken == NULL) goto openerror;
+    dsopen(filename,"r");     // returns file handle in ftoken
     recs = 0;
-
     while (fgets(pbuff, 4096, ftoken)) {
         recs++;
         if (recs <= skip) continue;
@@ -180,7 +244,8 @@ DISKR:
  */
  DISKW:
     if (tokenhi<3) goto incomplete;
-    ftoken = fopen(tokens[3], "w");
+//    ftoken = fopen(tokens[3], "w");
+    dsopen(filename,"w");     // returns file handle in ftoken
     goto WriteAll;
  /* --------------------------------------------------------------------------------------------
  * DISKA
@@ -188,7 +253,8 @@ DISKR:
  */
  DISKA:
     if (tokenhi<3) goto incomplete;
-    ftoken = fopen(tokens[3], "a");
+//    ftoken = fopen(tokens[3], "a");
+    dsopen(filename,"a");     // returns file handle in ftoken
     goto WriteAll  ;
 /* --------------------------------------------------------------------------------------------
  * Write Records for DISKW and DISKA
@@ -295,7 +361,7 @@ DISKR:
     printf("EXECIO incomplete parameter list\n");
     goto exit8;
   openerror:
-    printf("EXECIO cannot open %s\n",tokens[3]);
+    printf("EXECIO cannot open %s\n",LSTR(*filename));
     goto exit8;
   emptyStack:
     printf("EXECIO DISKW stack is empty, nothing to store \n");
@@ -303,6 +369,7 @@ DISKR:
 
 exit8:
     LPFREE(plsValue)
+    LPFREE(filename)
     return 8;
 }
 

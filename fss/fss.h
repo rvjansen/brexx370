@@ -2,9 +2,10 @@
  |  Copyright (c) 2012-, Tommy Sprinkle (tommy@tommysprinkle.com)
  |  Licensed under the NEW BSD Open Source License
   -----------------------------------------------------------------*/
-
 #ifndef FSS_H
 #define FSS_H
+
+#include "lstring.h"
 
 int     fssInit(void);
 int     fssTerm(void);
@@ -17,12 +18,16 @@ int     fssTxt(int row, int col, int attr, char *text);
 
 int     fssSetField(char *fldName, char *text);
 char  * fssGetField(char *fldName);
+void    fssGetMetrics(PLstr fssDefs, char *fssDetails);
+int     fssCheckPos(int screenPos);
 int     fssGetAID(void);
 int     fssGetAlternateScreenWidth();
 int     fssGetAlternateScreenHeight();
 int     fssRefresh(int expires, int cls);
 int     fssShow(int cls);
 int     fssSetCursor(char *fldName);
+int     fssSetCurPos(int curpos);
+int     fssGetCurPos();
 int     fssSetAttr(char *fildName, int attr);
 int     fssSetColor(char *fldName, int color);
 int     fssSetXH(char *fldName, int attr);

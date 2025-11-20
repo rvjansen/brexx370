@@ -16,6 +16,7 @@
 #define FSS_ENVIRONMENT             "FSS"
 #define DYNREXX_ENVIRONMENT         "DYNREXX"
 #define COMMAND_ENVIRONMENT         "COMMAND"
+#define CONSOLE_ENVIRONMENT         "CONSOLE"
 
 #define EXECIO_CMD                  "EXECIO"
 #define VSAMIO_CMD                  "VSAMIO"
@@ -30,14 +31,17 @@ int IRXSTAM(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
 
     Lstr     env;
     Lstr	 cmd;
+    Lstr	 orgcmd;
 
     char    *tokens[128];
 
     LINITSTR(env)
     LINITSTR(cmd)
+    LINITSTR(orgcmd)
 
     Lscpy2(&env,  pParms->envName, 8);
     Lscpy2(&cmd, *pParms->cmdString, *pParms->cmdLength);
+    Lscpy2(&orgcmd, *pParms->cmdString, *pParms->cmdLength); // save copy of command, as it will be cleared by tokenizeCMD
 
     Lstrip(&env, &env, LTRAILING, ' ');
     Lupper(&env);
@@ -51,7 +55,7 @@ int IRXSTAM(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
         // EXECIO IS CALLABLE IN TSO AND MVS ENVIRONMENT
         if (strcmp((char *)LSTR(env), TSO_ENVIRONMENT) == 0 ||
             strcmp((char *)LSTR(env), MVS_ENVIRONMENT) == 0) {
-            rc = RxEXECIO(tokens);
+            rc = RxEXECIO(tokens,&orgcmd);  // call with original command
         } else {
             rc = -3;
         }
@@ -77,6 +81,8 @@ int IRXSTAM(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
             rc = __DYNREXX(pParms);
         } else if (strcmp((char *)LSTR(env), COMMAND_ENVIRONMENT)   == 0) {
             rc = __COMMAND(pEnvBlock, pParms);
+        } else if (strcmp((char *)LSTR(env), CONSOLE_ENVIRONMENT)   == 0) {
+            rc = __CONSOLE(pEnvBlock, pParms);
         } else {
             rc = -3;
         }
@@ -84,6 +90,7 @@ int IRXSTAM(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
 
     LFREESTR(env);
     LFREESTR(cmd);
+    LFREESTR(orgcmd);
 
     *pParms->returnCode = rc;
 
@@ -141,7 +148,9 @@ int __TSO(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
 
         // link new cppl buffer into cppl
         cppl[0] = &cpplBuffer;
-
+        if (strcasecmp(modulName,"TIME    ")    == 0) {
+            strcpy(modulName,"IKJEFT25");
+        }
         // call link svc
         if (findLoadModule(modulName)) {
             rc = linkLoadModule(modulName, cppl, pEnvBlock);
@@ -229,6 +238,8 @@ int __FSS(char **tokens) {
         rc = RxFSS_RESET(tokens);
     } else if (strcasecmp(tokens[0], "TEXT")    == 0) {
         rc = RxFSS_TEXT(tokens);
+    } else if (strcasecmp(tokens[0], "TEST")    == 0) {
+        rc = RxFSS_TEST(tokens);
     } else if (strcasecmp(tokens[0], "FIELD")   == 0) {
         rc = RxFSS_FIELD(tokens);
     } else if (strcasecmp(tokens[0], "SET")     == 0) {
@@ -387,9 +398,6 @@ int __COMMAND(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
         upt  = cppl[1];
         ect  = cppl[3];
 
-        if (!rac_check(FACILITY, CP, READ) && !rac_check(FACILITY, AUTH_ALL, READ))
-            Lerror(ERR_NOT_AUTHORIZED, 0);
-
         if(strncasecmp(*pParms->cmdString, CP_NAM, CP_LEN) == 0) {
             *pParms->cmdString = *pParms->cmdString + CP_LEN;
             *pParms->cmdLength = *pParms->cmdLength - CP_LEN;
@@ -403,6 +411,36 @@ int __COMMAND(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
     return rc;
 }
 
+int __CONSOLE(RX_ENVIRONMENT_BLK_PTR pEnvBlock, RX_HOSTENV_PARAMS_PTR  pParms) {
+    int rc = 0;
+
+    RX_SVC_PARAMS svc_parameter;
+    unsigned char cmd[128];
+
+    if (!isTSO()) {
+        rc = -3;
+    }
+
+    if (rc == 0) {
+        bzero(cmd, sizeof(cmd));
+        cmd[1] = 104;
+
+        memset(&cmd[4], ' ', 124);
+        memcpy(&cmd[4], *pParms->cmdString, *pParms->cmdLength);
+
+        privilege(1);
+
+        /* SEND COMMAND */
+        svc_parameter.R0 = (uintptr_t) 0;
+        svc_parameter.R1 = (uintptr_t) &cmd[0];
+        svc_parameter.SVC = 34;
+        call_rxsvc(&svc_parameter);
+
+        privilege(0);
+    }
+
+    return rc;
+}
 
 void clearTokens(char **tokens) {
     int idx;

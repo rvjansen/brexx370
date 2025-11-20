@@ -7,17 +7,22 @@
 #include "smf.h"
 #include "util.h"
 
-#if defined(__CROSS__)
+#ifdef __CROSS__
 # include "jccdummy.h"
+#else
+extern char* _style;
+extern void ** entry_R13;
+extern int  __libc_tso_status;
+extern long __libc_arch;
+extern long __libc_heap_used;
+extern long __libc_heap_max;
+extern long __libc_stack_used;
+extern long __libc_stack_max;
 #endif
 
 extern int RxMvsInitialize();
 extern void RxMvsTerminate();
 extern void RxMvsRegFunctions();
-//extern int  isTSO();
-
-int genRunId();
-void term();
 
 /* --------------------- main ---------------------- */
 int __CDECL
@@ -25,27 +30,29 @@ main(int argc, char *argv[]) {
 
     Lstr args[MAXARGS], tracestr, fileName, pgmStr;
     int ii, jj, rc, staeret;
-    jmp_buf b;
+    jmp_buf jmpBuf;
 
     bool input = FALSE;
-    int runId;
+    bool smfTermWritten = FALSE;
+
+    void **cppl;
+    byte *cmdbuf;
 
     // STAE stuff
     SDWA sdwa;
+    bool nostae = FALSE;
     // *
 
-    // generate run id, used as kind of session identification for SMF
-    runId = genRunId();
-
-    // register termination routine
-    atexit(term);
-
+    // TODO: make this configurable
+    //__libc_arch = 1;
+    
     // register abend recovery routine
     if (strcasecmp(argv[argc - 1], "NOSTAE") == 0) {
         staeret = 0;
+        nostae = TRUE;
         argc--;
     } else {
-        staeret = _setjmp_stae(b, (char *) &sdwa); // We don't want 104 bytes of abend data
+        staeret = _setjmp_estae(jmpBuf, (char *) &sdwa);
     }
 
     if (staeret == 0) {
@@ -61,9 +68,42 @@ main(int argc, char *argv[]) {
 
         LINITSTR(tracestr);
 
+        /*
+        printf("DEBUG: BREXX got %d arguments\n", argc - 1);
+
+        if (isTSOFG()) {
+            printf("DEBUG: BREXX got called from TSO (online) \n");
+        } else if (isTSOBG()) {
+            printf("DEBUG: BREXX got called from TSO (batch)  \n");
+        }
+
+        if (isISPF()) {
+            printf("DEBUG: BREXX got called from ISPF\n");
+        }
+
+        if (isEXEC()) {
+            printf("DEBUG: BREXX got called from CLIST\n");
+        }
+
+
+        cppl = entry_R13[6];
+        cmdbuf = cppl[0];
+
+        puts("DEBUG: R1");
+        {
+            DumpHex((void *)cppl, 4);
+        }
+        puts("DEBUG: CPPLCBUF");
+        {
+            //unsigned length = (cmdbuf[0] | cmdbuf[1]); // subtract header length
+            //DumpHex(cmdbuf + 4, length);
+            DumpHex(cmdbuf, 24);
+        }
+        */
+
         if (argc < 2) {
             puts(VERSIONSTR);
-
+            RxMvsTerminate();
             return 0;
         }
 
@@ -105,7 +145,30 @@ main(int argc, char *argv[]) {
                 }
             }
 
-        Lcat(&fileName, argv[ii]);
+            Lcat(&fileName, argv[ii]);
+            if(Lbeg(&fileName, "0X") == 1) {
+
+                char *pgm = (char *) (atoi((const char *)fileName.pstr + 2));
+                int pgm_len  = strlen(pgm);
+
+                LINITSTR(pgmStr)
+
+                pgmStr.pstr = pgm;
+                pgmStr.len  = pgm_len;
+
+                fileName.pstr = NULL;
+
+                /*
+                printf("2) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM\n");
+                printf("3) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM1\n");
+                printf("5) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM12\n");
+                printf("7) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM123\n");
+                printf("7) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM1234\n");
+                printf("7) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM12345\n");
+                printf("7) TvB0j3pIB4fNF3epVo1fRS2wGFatkVFcfe5BbPZCwuad0zbopALAmZcvpAy7dvMu44DK1QxkipbdIiXJJCP4iRB64zfrPOtk60modq3oFTrE6ys0KWrH7x3rfXqA7chM123456\n");
+                */
+            }
+
 
         } else {
             //LFREESTR(fileName)
@@ -122,16 +185,34 @@ main(int argc, char *argv[]) {
             }
         }
 
-        RxRun(&fileName, &pgmStr, &args[0], &tracestr, runId);
+        writeStartRecord((char *) LSTR(fileName), (char *) LSTR(args[0]));
+
+        RxRun(&fileName, &pgmStr, &args[0], &tracestr);
+
+        if (!nostae) {
+            rc = _setjmp_ecanc();
+            if (rc > 0) {
+                fprintf(STDERR, "ERROR: BREXX ESTAE routine ended with RC(%d)\n", rc);
+            }
+        }
 
     } else if (staeret == 1) { // Something was caught - the STAE has been cleaned up.
 
+        // condition codes
         uint16_t scc;
         uint16_t ucc;
 
+        // program status word
+        int psw1;
+        int nxt1;
+
+        // instruction length code
         uint8_t  ilc;
+
+        // interruption code
         uint16_t intc;
 
+        // general purpose register
         int gpr00;
         int gpr01;
         int gpr02;
@@ -166,11 +247,15 @@ main(int argc, char *argv[]) {
             sprintf(completionCode, "?????");
         }
 
+        // extract the psw
+        psw1 = sdwa.sdwapsw1;
+        nxt1 = sdwa.sdwanxt1;
+
         // extract instruction length code
-        ilc = (sdwa.sdwapmka >> 1) & 0x3;
+        ilc = sdwa.sdwailc1;
 
         // extract interruption  code
-        intc = * (uint16_t *) &sdwa.sdwainta[0];
+        intc = sdwa.sdwaicd1;
 
         // extract general purpose registers
         gpr00 = sdwa.sdwagr00;
@@ -193,33 +278,22 @@ main(int argc, char *argv[]) {
         // extract module name
         moduleName = (char *) &sdwa.sdwaname;
 
-        fprintf(STDERR, "\nBRX0003E - ABEND CAUGHT IN BREXX/370 - SDWA(%lu)\n\n", sizeof(SDWA));
+        fprintf(STDERR, "\nBRX0003E - ABEND CAUGHT IN BREXX/370 \n\n");
 
         fprintf(STDERR, "USER %-8s  %-8s  ABEND %-5s\n", getlogin(), moduleName, completionCode );
-        fprintf(STDERR, "EPA %p PSW   %08X %08X  ILC %02X  INTC %04d\n", sdwa.sdwaepa, 0, 0, ilc, intc );
-        fprintf(STDERR, "DATA NEAR PSW  %08X  %08X %08X %08X %08X\n", 0, 0, 0, 0, 0);
+        fprintf(STDERR, "EPA %p  PSW %08X %08X  ILC %02X  INTC %04X\n",
+                sdwa.sdwaepa, psw1, nxt1, ilc, intc );
         fprintf(STDERR, "GR 0-3   %08X  %08X  %08X  %08X\n", gpr00, gpr01, gpr02, gpr03);
         fprintf(STDERR, "GR 4-7   %08X  %08X  %08X  %08X\n", gpr04, gpr05, gpr06, gpr07);
         fprintf(STDERR, "GR 8-11  %08X  %08X  %08X  %08X\n", gpr08, gpr09, gpr10, gpr11);
         fprintf(STDERR, "GR 12-15 %08X  %08X  %08X  %08X\n", gpr12, gpr13, gpr14, gpr15);
-        /*
-        USER HERC01    TRANSMIT  ABEND S013
-        PSW   075C1000 00E014BE  ILC 02  INTC 000D
-        DATA NEAR PSW  00E014B6  16104100 37860A0D 45E0372A 58204238
-        GR 0-3   00E01620  A0013000  000B178C  40E00E9A
-        GR 4-7   009A8BF8  019A8F2C  009A8EE4  019A8F2C
-        GR 8-11  009A8F04  00014008  58003398  009A8A7C
-        GR 12-15 0002AEA0  00000052  80E00F8A  00000018
-         */
 
         printf("\n");
 
-        fprintf(STDERR, "DUMPING THE SDWA\n");
-        DumpHex((const unsigned char *) &sdwa, 104);
-
-        write242Record(runId, &fileName, SMF_ABEND, 0, completionCode);
-
         rxReturnCode = 8;
+
+        writeTermRecord(rxReturnCode, completionCode);
+        smfTermWritten = TRUE;
 
         goto TERMINATE;
 
@@ -229,11 +303,14 @@ main(int argc, char *argv[]) {
 
     TERMINATE:
 
+    if (smfTermWritten == FALSE) {
+        writeTermRecord(rxReturnCode, NULL);
+    }
+
     /* --- Free everything --- */
     RxFinalize();
     RxResetTcpIp();
     RxMvsTerminate();
-    // TODO: call brxterm
 
     for (ii = 0; ii < MAXARGS; ii++) {
         LFREESTR(args[ii]);
@@ -252,17 +329,3 @@ main(int argc, char *argv[]) {
 
     return rxReturnCode;
 } /* main */
-
-int genRunId()
-{
-    srand((unsigned) time((time_t *)0)%(3600*24));
-    return rand() % 9999;
-}
-
-void term() {
-#ifdef __DEBUG__
-    fprintf(STDOUT, "\nBRX0001I - BREXX/370 TERMINATION ROUTINE STARTED\n");
-#endif
-
-    setEnvBlock(0);
-}

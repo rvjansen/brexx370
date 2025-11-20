@@ -93,6 +93,14 @@ RxFSS_RESET(char **tokens)
 }
 
 int
+RxFSS_TEST(char **tokens)
+{
+    if (fssIsINIT==FALSE) return 4;
+
+    return 0;
+}
+
+int
 RxFSS_FIELD(char **tokens)
 {
     int iErr = 0;
@@ -254,6 +262,10 @@ RxFSS_SET(char **tokens)
     if (findToken("CURSOR", tokens) == 1)
     {
         iErr = fssSetCursor(tokens[2]);
+    } else if (findToken("CURPOS", tokens) == 1)
+    {   int cursor = 0;
+        cursor=atoi(tokens[2]);
+        iErr = fssSetCurPos(cursor);
     } else if ( findToken("FIELD", tokens) == 1)
     {
         getVariable(tokens[3], plsValue);
@@ -262,45 +274,61 @@ RxFSS_SET(char **tokens)
     {
         int color = 0;
 
-        // check color is numeric
-        if (fssIsNumeric(tokens[3]))
-        {
+        // check attr is numeric
+        if (fssIsNumeric(tokens[3])) {
             color = atoi(tokens[3]);
-        }
-        else
-        {
-            if(strstr(tokens[3], "#BLUE") != NULL)
-            {
-                color = fssBLUE;
-            }
-            if(strstr(tokens[3], "#RED") != NULL)
-            {
-                color = fssRED;
-            }
-            if(strstr(tokens[3], "#PINK") != NULL)
-            {
-                color = fssPINK;
-            }
-            if(strstr(tokens[3], "#GREEN") != NULL)
-            {
-                color = fssGREEN;
-            }
-            if(strstr(tokens[3], "#TURQ") != NULL)
-            {
-                color = fssTURQ;
-            }
-            if(strstr(tokens[3], "#YELLOW") != NULL)
-            {
-                color = fssYELLOW;
-            }
-            if(strstr(tokens[3], "#WHITE") != NULL)
-            {
-                color = fssWHITE;
+        } else {
+            if (strstr(tokens[3], "#ATTR") != NULL) {
+                color = getIntegerVariable("#ATTR");
+            } else {
+                if(strstr(tokens[3], "#PROT") != NULL){
+                    color = color + fssPROT;
+                }
+                if(strstr(tokens[3], "#NUM") != NULL){
+                    color = color + fssNUM;
+                }
+                if(strstr(tokens[3], "#HI") != NULL){
+                    color = color + fssHI;
+                }
+                if(strstr(tokens[3], "#NON") != NULL){
+                    color = color + fssNON;
+                }
+                if(strstr(tokens[3], "#BLUE") != NULL){
+                    color = color + fssBLUE;
+                }
+                if(strstr(tokens[3], "#RED") != NULL){
+                    color = color + fssRED;
+                }
+                if(strstr(tokens[3], "#PINK") != NULL){
+                    color = color + fssPINK;
+                }
+                if(strstr(tokens[3], "#GREEN") != NULL){
+                    color = color + fssGREEN;
+                }
+                if(strstr(tokens[3], "#TURQ") != NULL){
+                    color = color + fssTURQ;
+                }
+                if(strstr(tokens[3], "#YELLOW") != NULL){
+                    color = color + fssYELLOW;
+                }
+                if(strstr(tokens[3], "#WHITE") != NULL){
+                    color = color + fssWHITE;
+                }
+                if(strstr(tokens[3], "#BLINK") != NULL){
+                    color = color + fssBLINK;
+                }
+                if(strstr(tokens[3], "#REVERSE") != NULL){
+                    color = color + fssREVERSE;
+                }
+                if(strstr(tokens[3], "#USCORE") != NULL){
+                    color = color + fssUSCORE;
+                }
             }
         }
 
         getVariable(tokens[3], plsValue);
         iErr = fssSetColor(tokens[2], color);
+
     } else
     {
         iErr = -1;
@@ -315,6 +343,7 @@ int
 RxFSS_GET(char **tokens)
 {
     int iErr = 0;
+    PLstr plsValue;
 
     if (fssIsINIT==FALSE) return 8;
 
@@ -326,6 +355,13 @@ RxFSS_GET(char **tokens)
         setIntegerVariable(tokens[2], fssGetAlternateScreenHeight());
     } else if (findToken("FIELD", tokens) == 1) {
         setVariable(tokens[3], fssGetField(tokens[2]));
+    } else if (findToken("CURPOS", tokens) == 1) {
+        setIntegerVariable(tokens[2], fssGetCurPos());
+    } else if (findToken("METRICS", tokens) == 1) {
+        LPMALLOC(plsValue);
+        fssGetMetrics(plsValue, tokens[3]);
+        setVariable(tokens[2],LSTR(*plsValue));
+        LPFREE(plsValue)
     } else {
         iErr = -1;
     }
@@ -362,7 +398,7 @@ RxFSS_SHOW(char **tokens)
 int
 RxFSS_CHECK(char **tokens)
 {
-    int iErr;
+    int iErr=0, row=0, col=0;
 
     if (fssIsINIT==FALSE) return 8;
 
@@ -374,6 +410,18 @@ RxFSS_CHECK(char **tokens)
         } else {
             iErr = 4;
         }
+    } else if (strcasecmp(tokens[1], "POS") == 0) {
+        // check row/col is numeric
+        if (fssIsNumeric(tokens[2]) && fssIsNumeric(tokens[3])) {
+            row = atoi(tokens[2]);
+            col = atoi(tokens[3]);
+        //    pos = (row-1)*fssGetAlternateScreenWidth()+(col-1);
+        //    printf("POS %d\n",pos);
+            iErr=fssCheckPos((row-1)*fssGetAlternateScreenWidth()+(col-1));
+        } else {
+            iErr = -1;
+        }
+
     } else {
         iErr = -3;
     }
